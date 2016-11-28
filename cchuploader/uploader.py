@@ -20,14 +20,6 @@ def asUtc(ts):
 def minus_days(date, days):
     return date - timedelta(days=days)
 
-def make_uuid(model, model_id):
-    if isinstance(model, unicode):
-        model = model.encode('utf-8')
-    if isinstance(model_id, unicode):
-        model_id = model_id.encode('utf-8')
-    token = '%s,%s' % (model, model_id)
-    return str(uuid.uuid5(uuid.NAMESPACE_OID, token))
-
 class CchPool(object):
     def __init__(self, mongo):
         self.mongo = pymongo.MongoClient(mongo['uri'])
@@ -47,9 +39,28 @@ class CchPool(object):
         return (self.cch
             .find(filters, ['datetime', 'name', 'ai']))
 
+class CupsPool(object):
+    def __init__(self, erp):
+        erp = Client(**erp)
+
+        ct_obj = erp.model('giscedata.polissa')
+        filters = [
+                ('cups.empowering', '=', True),
+                ('state', '=', 'activa'),
+                ('active', '=', True),
+                ]
+        self.index = { c['cups'][1][:20]:c['name']
+                for c in ct_obj.read(
+                        ct_obj.search(filters), ['name', 'cups'])}
+
+    def isActive(self, cups):
+        return cups[:20] in self.index
+
+    def toContract(self, cups):
+        return self.index[cups[:20]] if self.isActive(cups) else None
+
 class WriterPool(object):
-    def __init__(self, index, path, maxfiles):
-        self.index = index
+    def __init__(self, path, maxfiles):
         self.path = path
         self.pool = dict()
         self.maxfiles = maxfiles
@@ -60,7 +71,7 @@ class WriterPool(object):
 
         fds = self.pool.keys()
         if len(fds) > self.maxfiles:
-            for i in range(int(0.25*maxfiles)):
+            for i in range(int(0.25*self.maxfiles)):
                 self.pool[fds[i]].close()
                 del self.pool[fds[i]]
         filename = os.path.join(self.path, name + '.csv')
@@ -68,25 +79,17 @@ class WriterPool(object):
         return self.pool[name]
 
     def write(self, index, miter):
-        def nameit(name):
-            return make_uuid('giscedata.cups.ps', name)
         def line(ts, ai):
             return ('%s;%d' % (ts,ai)) + '\n'
-        def find(index, record):
-            if record in index:
-                return record
-            if record[:20] in index:
-                return record[:20]
-            return None
 
         for m in miter:
-            cups = find(index, m['name'])
-            if not cups:
+            ct = index.toContract(m['name'])
+            if not ct:
                 continue
             ts = m['datetime']
             ai = m['ai']
 
-            fd = self.allocate(nameit(cups))
+            fd = self.allocate(ct)
             fd.write(line(ts,ai))
 
     def __del__(self):
@@ -97,8 +100,8 @@ class WriterPool(object):
 @click.group()
 @click.pass_context
 def uploader(ctx):
-    ctx.obj['pool'] = CchPool(dbconfig.mongo)
-    ctx.obj['erp'] = Client(**dbconfig.erppeek)
+    ctx.obj['cch'] = CchPool(dbconfig.mongo)
+    ctx.obj['cups'] = CupsPool(dbconfig.erppeek)
 
 @uploader.command()
 @click.pass_context
@@ -106,17 +109,13 @@ def uploader(ctx):
 @click.option('--days', default=14)
 @click.option('--maxfiles', default=100)
 def post(ctx, path, days, maxfiles):
-    pool = ctx.obj['pool']
-    erp_obj = ctx.obj['erp']
-    cups_obj = erp_obj.model('giscedata.cups.ps')
+    cch = ctx.obj['cch']
+    cups = ctx.obj['cups']
 
-    index = [c['name'] 
-        for c in cups_obj.read(
-           cups_obj.search([('empowering', '=', True)]), ['name'])]
-    writer = WriterPool(index, path, maxfiles)
+    writer = WriterPool(path, maxfiles)
     end = asUtc(now())
     start = minus_days(end, days)
-    writer.write(index, pool.get(start, end))
+    writer.write(cups, cch.get(start, end))
 
 if __name__ == '__main__':
     uploader(obj=dict())
