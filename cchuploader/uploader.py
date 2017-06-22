@@ -17,8 +17,8 @@ def now():
 def asutc(ts):
     return ts.astimezone(pytz.utc)
 
-def isodate(date):
-    return datetime.strptime(date, '%Y-%m-%d')
+def isodatetime(date):
+    return tz.localize(datetime.strptime(date, '%Y-%m-%d %H:%M:%S.%f'))
 
 class CchPool(object):
     def __init__(self, mongo):
@@ -108,7 +108,7 @@ class PushLog(object):
     def get_start(self):
         p_obj = self.erp.model('empowering.cch.push.log')
         p_id = p_obj.search([('status', '=', 'done')],
-            limit=1, order='start_date desc')
+            limit=1, order='start_date desc')[0]
         start_date = p_obj.read(p_id, ['start_date'])['start_date'] \
             if p_id else '1970-01-01'
         return start_date
@@ -120,9 +120,11 @@ class PushLog(object):
             'end_date': end,
             'contracts': contracts,
             'measurements': measurements,
-            'status': 'failed' if failed else 'done',
+            'status': 'failed' if status else 'done',
             'message': message
         }
+        print "*******"
+        print values
         p_obj.create(values)
 
 
@@ -139,12 +141,12 @@ def uploader(ctx):
 @click.pass_context
 @click.argument('path', type=click.Path(exists=True))
 @click.option('--maxfiles', default=100)
-def post(ctx, path, days, maxfiles):
+def post(ctx, path, maxfiles):
     cch = ctx.obj['cch']
     cups = ctx.obj['cups']
     log = ctx.obj['log']
 
-    start = isodate(log.get_start())
+    start = isodatetime(log.get_start())
     end = now()
 
     start_ = now()
