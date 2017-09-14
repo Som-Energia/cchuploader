@@ -113,6 +113,8 @@ class PushLog(object):
         return start_date
 
     def write(self, start, end, contracts, measurements, status, message):
+        start = start.replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
+        end = end.replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
         p_obj = self.erp.model('empowering.cch.push.log')
         values = {
             'start_date': start,
@@ -122,8 +124,6 @@ class PushLog(object):
             'status': 'failed' if status else 'done',
             'message': message
         }
-        print "*******"
-        print values
         p_obj.create(values)
 
 
