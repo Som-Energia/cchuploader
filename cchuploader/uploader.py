@@ -31,7 +31,6 @@ class CchPool(object):
         end = asUtc(now()) if not end else end
 
         filters = dict(
-            validated = True,
             update_at = {
                 '$gt': start,
                 '$lt': end
