@@ -124,7 +124,7 @@ class PushLog(object):
             'end_date': end,
             'contracts': contracts,
             'measurements': measurements,
-            'status': 'failed' if status else 'done',
+            'status': status,
             'message': message
         }
         p_obj.create(values)
