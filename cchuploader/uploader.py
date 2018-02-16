@@ -18,7 +18,7 @@ def asutc(ts):
     return ts.astimezone(pytz.utc)
 
 def isodatetime(date):
-    return tz.localize(datetime.strptime(date, '%Y-%m-%d %H:%M:%S.%f'))
+    return tz.localize(datetime.strptime(date, '%Y-%m-%d %H:%M:%S'))
 
 class CchPool(object):
     def __init__(self, mongo):
@@ -31,7 +31,7 @@ class CchPool(object):
         end = asUtc(now()) if not end else end
 
         filters = dict(
-            update_at = {
+            create_at = {
                 '$gt': start,
                 '$lt': end
             })
