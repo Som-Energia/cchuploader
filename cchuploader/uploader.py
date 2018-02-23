@@ -20,6 +20,9 @@ def asutc(ts):
 def isodatetime(date):
     return tz.localize(datetime.strptime(date, '%Y-%m-%d %H:%M:%S'))
 
+def isodate(date):
+    return tz.localize(datetime.strptime(date, '%Y-%m-%d'))
+
 class CchPool(object):
     def __init__(self, mongo):
         self.mongo = pymongo.MongoClient(mongo['uri'])
@@ -46,15 +49,20 @@ class CupsPool(object):
                 ('state', '=', 'activa'),
                 ('active', '=', True),
                 ]
-        self.index = { c['cups'][1][:20]:c['name']
-                for c in ct_obj.read(
-                        ct_obj.search(filters), ['name', 'cups'])}
+        fields_to_read = ['name', 'cups', 'data_alta']
+        self.index = {}
+        self.index_datestart = {}
+        for c in ct_obj.read(ct_obj.search(filters), fields_to_read):
+            self.index[c['cups'][1][:20]] = c['name']
+            self.index_datestart[c['name']] = asutc(isodate(c['data_alta']))
 
-    def isActive(self, cups):
-        return cups[:20] in self.index
+    def isActive(self, cups, ts):
+        name = cups[:20]
+        return (name in self.index and
+            (ts >= self.index_datestart[self.index[name]]))
 
-    def toContract(self, cups):
-        return self.index[cups[:20]] if self.isActive(cups) else None
+    def toContract(self, cups, ts):
+        return self.index[cups[:20]] if self.isActive(cups, ts) else None
 
 class WriterPool(object):
     def __init__(self, path, maxfiles):
@@ -82,12 +90,12 @@ class WriterPool(object):
         n = 0
         cts = set()
         for m in miter:
-            ct = index.toContract(m['name'])
-            if not ct:
-                continue
             dt = m['datetime']
             dst = int(m['season'])
             ts = tz.localize(dt, is_dst=dst).astimezone(pytz.utc) 
+            ct = index.toContract(m['name'], ts)
+            if not ct:
+                continue
             ts -= timedelta(hours=1) 
             ai = m['ai']
             validated = m['validated']
