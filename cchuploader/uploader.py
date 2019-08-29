@@ -140,12 +140,13 @@ class PushLog(object):
 
 @click.group()
 @click.pass_context
-def uploader(ctx):
-    ctx.obj['cch'] = CchPool(dbconfig.mongo)
+def uploader(ctx, mongo):
+    ctx.obj['cch'] = CchPool(mongo)
 
     erp = Client(**dbconfig.erppeek)
     ctx.obj['cups'] = CupsPool(erp)
     ctx.obj['log'] = PushLog(erp)
+
 
 @uploader.command()
 @click.pass_context
@@ -178,6 +179,7 @@ def post(ctx, path, maxfiles):
 
 
 if __name__ == '__main__':
-    uploader(obj=dict())
+    uploader(obj=dict(), dbconfig.mongo)
+    uploader(obj=dict(), dbconfig.mongo_p5d)
 
 # vim: et ts=4 sw=4
