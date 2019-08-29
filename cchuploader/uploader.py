@@ -70,7 +70,7 @@ class WriterPool(object):
         self.pool = dict()
         self.maxfiles = maxfiles
 
-    def allocate(self, name):
+    def allocate(self, name, cch_type):
         if name in self.pool:
             return self.pool[name]
 
@@ -79,11 +79,11 @@ class WriterPool(object):
             for i in range(int(0.25*self.maxfiles)):
                 self.pool[fds[i]].close()
                 del self.pool[fds[i]]
-        filename = os.path.join(self.path, name + '.csv')
+        filename = os.path.join(self.path, name + cch_type + '.csv')
         self.pool[name] = open(filename, 'a')
         return self.pool[name]
 
-    def write(self, index, miter):
+    def write(self, index, miter, cch_type):
         def line(ts, ai, validated):
             return ('%s;%d;%s' % (ts,ai,validated)) + '\n'
 
@@ -99,7 +99,7 @@ class WriterPool(object):
             ts -= timedelta(hours=1) 
             ai = m['ai']
             validated = m['validated']
-            fd = self.allocate(ct)
+            fd = self.allocate(ct, cch_type)
             fd.write(line(ts,ai,validated))
 
             n += 1
@@ -142,6 +142,7 @@ class PushLog(object):
 @click.pass_context
 def uploader(ctx, mongo):
     ctx.obj['cch'] = CchPool(mongo)
+    ctx.obj['cch_type'] = mongo['collection']
 
     erp = Client(**dbconfig.erppeek)
     ctx.obj['cups'] = CupsPool(erp)
@@ -156,6 +157,7 @@ def post(ctx, path, maxfiles):
     cch = ctx.obj['cch']
     cups = ctx.obj['cups']
     log = ctx.obj['log']
+    cch_type = ctx.obj['cch_type']
 
     start = isodatetime(log.get_start())
     end = now()
@@ -168,7 +170,8 @@ def post(ctx, path, maxfiles):
     try:
         writer = WriterPool(path, maxfiles)
         nc,nm = writer.write(cups,
-            cch.get(asutc(start), asutc(end)))
+            cch.get(asutc(start), asutc(end)),
+            cch_type)
     except Exception as e:
         print e
         status = 'failed'
