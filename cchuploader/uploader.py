@@ -27,6 +27,7 @@ class CchPool(object):
     def __init__(self, mongo):
         self.mongo = pymongo.MongoClient(mongo['uri'])
         self.cch = self.mongo[mongo['dbname']][mongo['collection']]
+        self.mongo_collection = mongo['collection']
 
     def get(self, start=None, end=None):
         assert start is not None, (
@@ -38,8 +39,12 @@ class CchPool(object):
                 '$gt': start,
                 '$lt': end
             })
-        return (self.cch
-            .find(filters, ['datetime', 'name', 'ai', 'season', 'validated']))
+        if self.mongo_collection == 'tg_cchfact':
+            return (self.cch
+                .find(filters, ['datetime', 'name', 'ai', 'season', 'validated']))
+        else:
+            return (self.cch
+                .find(filters, ['datetime', 'name', 'ai']))
 
 class CupsPool(object):
     def __init__(self, erp):
@@ -79,28 +84,41 @@ class WriterPool(object):
             for i in range(int(0.25*self.maxfiles)):
                 self.pool[fds[i]].close()
                 del self.pool[fds[i]]
-        filename = os.path.join(self.path, name + cch_type + '.csv')
+        filename = os.path.join(self.path, name + '_' + cch_type + '.csv')
         self.pool[name] = open(filename, 'a')
         return self.pool[name]
 
     def write(self, index, miter, cch_type):
+        def line_p5d(ts, ai):
+            return ('%s;%d' % (ts,ai)) + '\n'
+
         def line(ts, ai, validated):
             return ('%s;%d;%s' % (ts,ai,validated)) + '\n'
-
         n = 0
         cts = set()
         for m in miter:
-            dt = m['datetime']
-            dst = int(m['season'])
-            ts = tz.localize(dt, is_dst=dst).astimezone(pytz.utc) 
-            ct = index.toContract(m['name'], ts)
-            if not ct:
-                continue
-            ts -= timedelta(hours=1) 
-            ai = m['ai']
-            validated = m['validated']
-            fd = self.allocate(ct, cch_type)
-            fd.write(line(ts,ai,validated))
+            if  cch_type == 'tg_cchval':
+                dt = m['datetime']
+                ts = tz.localize(dt).astimezone(pytz.utc)
+                ct = index.toContract(m['name'], ts)
+                if not ct:
+                    continue
+                ts -= timedelta(hours=1)
+                ai = m['ai']
+                fd = self.allocate(ct, cch_type)
+                fd.write(line_p5d(ts, ai))
+            else:
+                dt = m['datetime']
+                dst = int(m['season'])
+                ts = tz.localize(dt, is_dst=dst).astimezone(pytz.utc)
+                ct = index.toContract(m['name'], ts)
+                if not ct:
+                    continue
+                ts -= timedelta(hours=1)
+                ai = m['ai']
+                validated = m['validated']
+                fd = self.allocate(ct, cch_type)
+                fd.write(line(ts,ai,validated))
 
             n += 1
             cts.add(ct)
@@ -140,9 +158,9 @@ class PushLog(object):
 
 @click.group()
 @click.pass_context
-def uploader(ctx, mongo):
-    ctx.obj['cch'] = CchPool(mongo)
-    ctx.obj['cch_type'] = mongo['collection']
+def uploader(ctx):
+    ctx.obj['cch'] = CchPool(ctx.obj['mongo'])
+    ctx.obj['cch_type'] = ctx.obj['mongo']['collection']
 
     erp = Client(**dbconfig.erppeek)
     ctx.obj['cups'] = CupsPool(erp)
@@ -182,7 +200,7 @@ def post(ctx, path, maxfiles):
 
 
 if __name__ == '__main__':
-    uploader(obj=dict(), dbconfig.mongo)
-    uploader(obj=dict(), dbconfig.mongo_p5d)
+    uploader(obj=dict({'mongo': dbconfig.mongo}))
+    uploader(obj=dict({'mongo': dbconfig.mongo_p5d}))
 
 # vim: et ts=4 sw=4
