@@ -158,9 +158,19 @@ class PushLog(object):
 
 @click.group()
 @click.pass_context
-def uploader(ctx):
-    ctx.obj['cch'] = CchPool(ctx.obj['mongo'])
-    ctx.obj['cch_type'] = ctx.obj['mongo']['collection']
+@click.option(
+    '--curve',
+    default='cchfact',
+    help='Name of the curve collection. cchfact, cchval...'
+)
+def uploader(ctx, curve):
+    conn_data = getattr(dbconfig, 'mongo_{}'.format(curve), '')
+    if not conn_data:
+        msg = "Not mongo configuration found for curve {}"
+        raise click.ClickException(msg.format(curve))
+
+    ctx.obj['cch'] = CchPool(conn_data)
+    ctx.obj['cch_type'] = conn_data['collection']
 
     erp = Client(**dbconfig.erppeek)
     ctx.obj['cups'] = CupsPool(erp)
@@ -200,7 +210,6 @@ def post(ctx, path, maxfiles):
 
 
 if __name__ == '__main__':
-    uploader(obj=dict({'mongo': dbconfig.mongo}))
-    uploader(obj=dict({'mongo': dbconfig.mongo_p5d}))
+    uploader(obj=dict())
 
 # vim: et ts=4 sw=4
