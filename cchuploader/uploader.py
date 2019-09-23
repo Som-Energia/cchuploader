@@ -206,7 +206,8 @@ def post(ctx, path, maxfiles):
         message = str(e)
     end_ = now()
 
-    log.write(start_, end_, nc, nm, status, message)
+    if cch_type == 'tg_cchval':
+        log.write(start_, end_, nc, nm, status, message)
 
 
 if __name__ == '__main__':
