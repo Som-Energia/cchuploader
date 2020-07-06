@@ -35,7 +35,7 @@ class CchPool(object):
         end = asUtc(now()) if not end else end
 
         filters = dict(
-            create_at = {
+            datetime = {
                 '$gt': start,
                 '$lt': end
             })
@@ -47,12 +47,13 @@ class CchPool(object):
                 .find(filters, ['datetime', 'name', 'ai']))
 
 class CupsPool(object):
-    def __init__(self, erp):
+    def __init__(self, erp, contract_ids):
         ct_obj = erp.model('giscedata.polissa')
         filters = [
                 ('cups.empowering', '=', True),
                 ('state', '=', 'activa'),
                 ('active', '=', True),
+                ('name', 'in', contract_ids)
                 ]
         fields_to_read = ['name', 'cups', 'data_alta']
         self.index = {}
@@ -163,18 +164,34 @@ class PushLog(object):
     default='cchfact',
     help='Name of the curve collection. cchfact, cchval...'
 )
-def uploader(ctx, curve):
+
+@click.option(
+    '--contracts_file', type=click.File(),
+    help='csv with all files'
+)
+@click.option(
+    '--start_date', type=click.DateTime(formats=["%Y-%m-%d"]),
+    help='start date to get curves'
+)
+@click.option(
+        '--end_date', type=click.DateTime(formats=["%Y-%m-%d"]),
+    help='end date to get curves'
+)
+def uploader(ctx, curve, start_date, end_date, contracts_file):
     conn_data = getattr(dbconfig, 'mongo_{}'.format(curve), '')
     if not conn_data:
         msg = "Not mongo configuration found for curve {}"
         raise click.ClickException(msg.format(curve))
 
+    contract_ids = filter(None, contracts_file.read().split('\n'))
     ctx.obj['cch'] = CchPool(conn_data)
     ctx.obj['cch_type'] = conn_data['collection']
+    ctx.obj['start_date'] = start_date
+    ctx.obj['end_date'] = end_date
 
     erp = Client(**dbconfig.erppeek)
-    ctx.obj['cups'] = CupsPool(erp)
-    ctx.obj['log'] = PushLog(erp)
+    ctx.obj['cups'] = CupsPool(erp, contract_ids)
+    #ctx.obj['log'] = PushLog(erp)
 
 
 @uploader.command()
@@ -184,13 +201,17 @@ def uploader(ctx, curve):
 def post(ctx, path, maxfiles):
     cch = ctx.obj['cch']
     cups = ctx.obj['cups']
-    log = ctx.obj['log']
+    #log = ctx.obj['log']
     cch_type = ctx.obj['cch_type']
+    start_date = ctx.obj['start_date'] # just for beedata hole
+    end_date = ctx.obj['end_date'] # just for beedata hole
+ 
+    start = tz.localize(start_date)
+    end = tz.localize(end_date)
+    #start = isodatetime(log.get_start())
+    #end = now()
 
-    start = isodatetime(log.get_start())
-    end = now()
-
-    start_ = now()
+    #start_ = now()
     status = 'done'
     message = ''
     nc = 0 # number of contracts
@@ -204,10 +225,10 @@ def post(ctx, path, maxfiles):
         print e
         status = 'failed'
         message = str(e)
-    end_ = now()
+    #end_ = now()
 
-    if cch_type == 'tg_cchval':
-        log.write(start_, end_, nc, nm, status, message)
+    #if cch_type == 'tg_cchval':
+    #    log.write(start_, end_, nc, nm, status, message)
 
 
 if __name__ == '__main__':
